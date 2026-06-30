@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>แชทสด.net — IRC แบบไทย</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=IBM+Plex+Mono:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #090b0c;
+    --bg-panel: #0e1314;
+    --bg-raised: #131a1b;
+    --line: #1f2b2c;
+    --phosphor: #baff39;
+    --phosphor-dim: #7fae28;
+    --cyan: #3be6e0;
+    --magenta: #ff5fd6;
+    --amber: #ffb454;
+    --red: #ff5f5f;
+    --text: #d3ead0;
+    --text-dim: #6c8a78;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; }
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:'IBM Plex Mono','Noto Sans Thai',monospace;
+    overflow:hidden;
+  }
+
+  /* scanline / crt overlay */
+  #crt{
+    position:fixed; inset:0; pointer-events:none; z-index:999;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,0.12) 0px, rgba(0,0,0,0.12) 1px, transparent 1px, transparent 3px);
+    mix-blend-mode:multiply; opacity:0.35;
+  }
+  #vignette{
+    position:fixed; inset:0; pointer-events:none; z-index:998;
+    box-shadow: inset 0 0 180px rgba(0,0,0,0.75);
+  }
+
+  /* ===================== LOGIN SCREEN ===================== */
+  #login-screen{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background:
+      radial-gradient(ellipse at 50% 20%, rgba(186,255,57,0.06), transparent 60%),
+      var(--bg);
+    z-index:10;
+  }
+  #login-box{
+    width:min(440px, 90vw); border:1px solid var(--line); background:var(--bg-panel);
+    padding:34px 30px; position:relative;
+  }
+  #login-box::before{
+    content:''; position:absolute; top:-1px; left:-1px; right:-1px; height:3px;
+    background:linear-gradient(90deg, var(--phosphor), var(--cyan), var(--magenta));
+  }
+  .logo{
+    font-family:'Press Start 2P', monospace; font-size:20px; color:var(--phosphor);
+    text-shadow:0 0 14px rgba(186,255,57,0.55); letter-spacing:1px; margin-bottom:6px;
+  }
+  .logo span{ color:var(--magenta); text-shadow:0 0 14px rgba(255,95,214,0.55); }
+  .tagline{ color:var(--text-dim); font-size:12px; margin-bottom:28px; letter-spacing:1px; }
+  .boot-line{ font-size:12px; color:var(--phosphor-dim); margin-bottom:4px; opacity:0; animation:fadeIn 0.4s forwards; }
+  @keyframes fadeIn{ to{ opacity:1; } }
+  .field-label{ font-size:11px; color:var(--text-dim); letter-spacing:2px; margin-bottom:6px; display:block; }
+  #nick-input{
+    width:100%; background:var(--bg-raised); border:1px solid var(--line); color:var(--phosphor);
+    font-family:inherit; font-size:16px; padding:12px 14px; outline:none; margin-bottom:18px;
+  }
+  #nick-input:focus{ border-color:var(--phosphor); box-shadow:0 0 0 1px rgba(186,255,57,0.3); }
+  .room-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:24px; }
+  .room-choice{
+    border:1px solid var(--line); padding:10px 12px; cursor:pointer; font-size:13px;
+    color:var(--text-dim); transition:all 0.15s; background:var(--bg-raised);
+  }
+  .room-choice:hover{ border-color:var(--cyan); color:var(--cyan); }
+  .room-choice.selected{ border-color:var(--phosphor); color:var(--phosphor); background:rgba(186,255,57,0.07); }
+  .room-choice .hash{ opacity:0.5; margin-right:4px; }
+  #enter-btn{
+    width:100%; padding:13px; background:var(--phosphor); color:#06140a; border:none;
+    font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:14px; letter-spacing:2px;
+    cursor:pointer; transition:transform 0.12s;
+  }
+  #enter-btn:hover{ transform:translateY(-1px); box-shadow:0 4px 16px rgba(186,255,57,0.3); }
+  #enter-btn:disabled{ background:var(--line); color:var(--text-dim); cursor:not-allowed; }
+  #login-error{ color:var(--red); font-size:12px; margin-top:10px; min-height:14px; }
+
+  /* ===================== MAIN APP ===================== */
+  #app{ display:none; height:100vh; flex-direction:column; }
+
+  #topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 16px; border-bottom:1px solid var(--line); background:var(--bg-panel);
+    flex-shrink:0;
+  }
+  #topbar .brand{ font-family:'Press Start 2P',monospace; font-size:12px; color:var(--phosphor); }
+  #topbar .brand span{ color:var(--magenta); }
+  #status-pill{
+    font-size:11px; color:var(--phosphor); display:flex; align-items:center; gap:6px;
+  }
+  #status-dot{ width:7px; height:7px; border-radius:50%; background:var(--phosphor); box-shadow:0 0 8px var(--phosphor); animation:pulse 1.6s infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+  #my-nick-tag{ color:var(--cyan); }
+  #hamburger{ display:none; background:none; border:1px solid var(--line); color:var(--text); padding:6px 10px; cursor:pointer; font-size:14px; }
+
+  #layout{ flex:1; display:flex; min-height:0; }
+
+  /* room sidebar */
+  #rooms-sidebar{
+    width:170px; flex-shrink:0; border-right:1px solid var(--line); background:var(--bg-panel);
+    overflow-y:auto; padding:14px 0;
+  }
+  .sidebar-title{ font-size:10px; color:var(--text-dim); letter-spacing:2px; padding:0 16px 8px; }
+  .room-item{
+    padding:9px 16px; font-size:13px; cursor:pointer; color:var(--text-dim); border-left:2px solid transparent;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .room-item:hover{ background:rgba(255,255,255,0.03); color:var(--text); }
+  .room-item.active{ border-left-color:var(--phosphor); color:var(--phosphor); background:rgba(186,255,57,0.06); }
+  .room-item .count{ font-size:10px; color:var(--text-dim); }
+
+  /* chat main */
+  #chat-main{ flex:1; display:flex; flex-direction:column; min-width:0; }
+  #room-header{
+    padding:10px 18px; border-bottom:1px solid var(--line); font-size:13px; color:var(--text-dim);
+    display:flex; justify-content:space-between; align-items:center; flex-shrink:0;
+  }
+  #room-header .room-name{ color:var(--text); font-weight:600; }
+  #room-header .room-name .hash{ color:var(--phosphor); }
+
+  #messages{
+    flex:1; overflow-y:auto; padding:16px 18px; font-size:14px; line-height:1.7;
+  }
+  #messages::-webkit-scrollbar{ width:8px; }
+  #messages::-webkit-scrollbar-thumb{ background:var(--line); }
+  #messages::-webkit-scrollbar-track{ background:transparent; }
+
+  .msg-line{ margin-bottom:5px; word-wrap:break-word; animation:slideIn 0.18s ease-out; }
+  @keyframes slideIn{ from{ opacity:0; transform:translateY(3px);} to{ opacity:1; transform:translateY(0);} }
+  .msg-time{ color:var(--text-dim); font-size:11px; margin-right:8px; }
+  .msg-nick{ font-weight:700; margin-right:4px; cursor:default; }
+  .msg-nick::after{ content:':'; color:var(--text-dim); font-weight:400; }
+  .msg-text{ color:var(--text); }
+  .msg-system{ color:var(--text-dim); font-style:italic; font-size:12.5px; }
+  .msg-system .icon{ color:var(--amber); margin-right:6px; }
+  .msg-action{ color:var(--magenta); font-style:italic; }
+  .msg-own .msg-text{ color:#eaffe0; }
+
+  #typing-indicator{ font-size:11.5px; color:var(--text-dim); padding:2px 18px; min-height:18px; flex-shrink:0; font-style:italic; }
+
+  #input-bar{
+    display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--line); background:var(--bg-panel); flex-shrink:0;
+  }
+  #msg-input{
+    flex:1; background:var(--bg-raised); border:1px solid var(--line); color:var(--text);
+    font-family:inherit; font-size:14px; padding:11px 14px; outline:none;
+  }
+  #msg-input:focus{ border-color:var(--cyan); }
+  #send-btn{
+    background:var(--phosphor); color:#06140a; border:none; padding:0 22px; font-weight:700;
+    font-family:inherit; cursor:pointer; letter-spacing:1px; font-size:13px;
+  }
+  #send-btn:active{ transform:scale(0.97); }
+
+  /* users sidebar */
+  #users-sidebar{
+    width:190px; flex-shrink:0; border-left:1px solid var(--line); background:var(--bg-panel);
+    overflow-y:auto; padding:14px 0;
+  }
+  .user-item{ padding:7px 16px; font-size:13px; display:flex; align-items:center; gap:7px; color:var(--text); cursor:pointer; }
+  .user-item:not(.is-me):hover{ background:rgba(59,230,224,0.08); color:var(--cyan); }
+  .user-dot{ width:6px; height:6px; border-radius:50%; background:var(--phosphor); box-shadow:0 0 5px var(--phosphor); flex-shrink:0; }
+  .user-item.is-me .user-dot{ background:var(--cyan); box-shadow:0 0 5px var(--cyan); }
+  .user-item .dm-badge{
+    margin-left:auto; background:var(--magenta); color:#1a0414; font-size:10px; font-weight:700;
+    border-radius:8px; padding:1px 6px; line-height:1.4;
+  }
+
+  /* ===================== PRIVATE MESSAGE PANEL ===================== */
+  #dm-fab{
+    position:fixed; right:18px; bottom:18px; z-index:40; width:50px; height:50px; border-radius:50%;
+    background:var(--bg-panel); border:1px solid var(--phosphor); color:var(--phosphor); font-size:20px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 0 14px rgba(186,255,57,0.25);
+  }
+  #dm-fab .fab-badge{
+    position:absolute; top:-4px; right:-4px; background:var(--magenta); color:#1a0414; font-size:10px;
+    font-weight:700; border-radius:8px; min-width:16px; height:16px; display:flex; align-items:center; justify-content:center; padding:0 4px;
+  }
+
+  #dm-list-panel, #dm-thread-panel{
+    position:fixed; right:18px; bottom:80px; width:300px; z-index:41; background:var(--bg-panel);
+    border:1px solid var(--line); display:none; flex-direction:column; max-height:60vh;
+    box-shadow:0 8px 30px rgba(0,0,0,0.6);
+  }
+  #dm-list-panel.open, #dm-thread-panel.open{ display:flex; }
+  .dm-panel-header{
+    padding:10px 14px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between;
+    font-size:12px; color:var(--text-dim); letter-spacing:1px; flex-shrink:0;
+  }
+  .dm-panel-header .title{ color:var(--magenta); font-weight:700; display:flex; align-items:center; gap:6px; }
+  .dm-panel-close, .dm-panel-back{
+    background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:14px; padding:2px 6px;
+  }
+  .dm-panel-close:hover, .dm-panel-back:hover{ color:var(--text); }
+
+  #dm-threads-list{ overflow-y:auto; flex:1; }
+  .dm-thread-item{
+    padding:10px 14px; border-bottom:1px solid var(--line); cursor:pointer; display:flex; justify-content:space-between; align-items:center;
+  }
+  .dm-thread-item:hover{ background:rgba(255,95,214,0.06); }
+  .dm-thread-item .nick{ font-size:13px; font-weight:600; }
+  .dm-empty{ padding:22px 14px; font-size:12px; color:var(--text-dim); text-align:center; }
+
+  #dm-messages{ flex:1; overflow-y:auto; padding:12px 14px; font-size:13px; line-height:1.6; max-height:280px; }
+  #dm-input-bar{ display:flex; gap:6px; padding:10px; border-top:1px solid var(--line); flex-shrink:0; }
+  #dm-input{
+    flex:1; background:var(--bg-raised); border:1px solid var(--line); color:var(--text);
+    font-family:inherit; font-size:13px; padding:8px 10px; outline:none;
+  }
+  #dm-input:focus{ border-color:var(--magenta); }
+  #dm-send-btn{
+    background:var(--magenta); color:#1a0414; border:none; padding:0 16px; font-weight:700;
+    font-family:inherit; cursor:pointer; font-size:12px;
+  }
+
+  #mobile-overlay{ display:none; }
+
+  @media (max-width: 880px){
+    #hamburger{ display:block; }
+    #rooms-sidebar, #users-sidebar{
+      position:fixed; top:0; bottom:0; width:220px; z-index:30; transition:transform 0.25s;
+    }
+    #rooms-sidebar{ left:0; transform:translateX(-100%); }
+    #users-sidebar{ right:0; transform:translateX(100%); }
+    #rooms-sidebar.open, #users-sidebar.open{ transform:translateX(0); }
+    #mobile-overlay.show{
+      display:block; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:25;
+    }
+    .room-grid{ grid-template-columns:1fr; }
+  }
+
+  ::selection{ background:var(--phosphor); color:#06140a; }
+</style>
+</head>
+<body>
+
+<div id="crt"></div>
+<div id="vignette"></div>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div id="login-box">
+    <div class="logo">แชทสด<span>.net</span></div>
+    <div class="tagline">// ห้องแชทสด ออนไลน์ตลอด 24 ชม. — สไตล์ IRC</div>
+
+    <div id="boot-lines"></div>
+
+    <label class="field-label">ตั้งชื่อเล่นของคุณ (NICKNAME)</label>
+    <input id="nick-input" type="text" maxlength="18" placeholder="เช่น เด็กกาดหลวง99" autocomplete="off">
+
+    <label class="field-label">เลือกห้องแชท (CHANNEL)</label>
+    <div class="room-grid" id="room-grid">
+      <div class="room-choice selected" data-room="general"><span class="hash">#</span>คุยทั่วไป</div>
+      <div class="room-choice" data-room="music"><span class="hash">#</span>เพลง</div>
+      <div class="room-choice" data-room="game"><span class="hash">#</span>เกม</div>
+      <div class="room-choice" data-room="love"><span class="hash">#</span>จิตอาสา-ความรัก</div>
+      <div class="room-choice" data-room="random"><span class="hash">#</span>สัพเพเหระ</div>
+      <div class="room-choice" data-room="night"><span class="hash">#</span>นอนไม่หลับ</div>
+    </div>
+
+    <button id="enter-btn">เข้าห้องแชท ▸</button>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<div id="mobile-overlay"></div>
+
+<!-- APP -->
+<div id="app">
+  <div id="topbar">
+    <button id="hamburger">☰ ห้อง</button>
+    <div class="brand">แชทสด<span>.net</span></div>
+    <div id="status-pill"><span id="status-dot"></span>เชื่อมต่ออยู่ — <span id="my-nick-tag"></span></div>
+    <button id="hamburger-right" style="display:none;">👥</button>
+  </div>
+
+  <div id="layout">
+    <div id="rooms-sidebar">
+      <div class="sidebar-title">ห้องแชท</div>
+      <div id="room-list"></div>
+    </div>
+
+    <div id="chat-main">
+      <div id="room-header">
+        <div class="room-name"><span class="hash">#</span><span id="current-room-name">general</span></div>
+        <div id="online-count">0 คนออนไลน์</div>
+      </div>
+      <div id="messages"></div>
+      <div id="typing-indicator"></div>
+      <div id="input-bar">
+        <input id="msg-input" type="text" placeholder="พิมพ์ข้อความ... (พิมพ์ /help เพื่อดูคำสั่ง)" autocomplete="off">
+        <button id="send-btn">ส่ง</button>
+      </div>
+    </div>
+
+    <div id="users-sidebar">
+      <div class="sidebar-title">ออนไลน์ในห้องนี้</div>
+      <div id="user-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- PRIVATE MESSAGE FAB + PANELS -->
+<button id="dm-fab" title="ข้อความส่วนตัว">✉<span class="fab-badge" id="dm-fab-badge" style="display:none;">0</span></button>
+
+<div id="dm-list-panel">
+  <div class="dm-panel-header">
+    <span class="title">✉ ข้อความส่วนตัว</span>
+    <button class="dm-panel-close" id="dm-list-close">✕</button>
+  </div>
+  <div id="dm-threads-list"></div>
+</div>
+
+<div id="dm-thread-panel">
+  <div class="dm-panel-header">
+    <button class="dm-panel-back" id="dm-back-btn">‹ กลับ</button>
+    <span class="title" id="dm-thread-title">คุยกับ...</span>
+    <button class="dm-panel-close" id="dm-thread-close">✕</button>
+  </div>
+  <div id="dm-messages"></div>
+  <div id="dm-input-bar">
+    <input id="dm-input" type="text" placeholder="พิมพ์ข้อความส่วนตัว..." autocomplete="off">
+    <button id="dm-send-btn">ส่ง</button>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+const ROOMS = [
+  {id:'general', label:'คุยทั่วไป'},
+  {id:'music', label:'เพลง'},
+  {id:'game', label:'เกม'},
+  {id:'love', label:'จิตอาสา-ความรัก'},
+  {id:'random', label:'สัพเพเหระ'},
+  {id:'night', label:'นอนไม่หลับ'},
+];
+
+let myNick = '';
+let myId = 'u' + Math.random().toString(36).slice(2,10);
+let currentRoom = 'general';
+let lastSeenTs = {};
+let pollTimer = null;
+let presenceTimer = null;
+let knownMsgIds = new Set();
+
+/* DM state */
+let dmThreads = {}; // otherId -> {nick, unread, readTs, lastTs}
+let activeDmPartner = null; // otherId currently open in thread panel
+let knownDmMsgIds = new Set();
+
+const NICK_COLORS = ['#baff39','#3be6e0','#ff5fd6','#ffb454','#ff5f5f','#9b8cff','#5fffb0','#ffd95f'];
+function colorForNick(nick){
+  let h = 0;
+  for(let i=0;i<nick.length;i++) h = (h*31 + nick.charCodeAt(i)) >>> 0;
+  return NICK_COLORS[h % NICK_COLORS.length];
+}
+
+/* ---------------- boot animation ---------------- */
+const bootLines = [
+  '> กำลังเชื่อมต่อเซิร์ฟเวอร์แชท...',
+  '> ตรวจสอบสถานะห้อง... OK',
+  '> พร้อมใช้งาน'
+];
+const bootEl = document.getElementById('boot-lines');
+bootLines.forEach((line,i)=>{
+  const d = document.createElement('div');
+  d.className = 'boot-line';
+  d.textContent = line;
+  d.style.animationDelay = (i*0.25)+'s';
+  bootEl.appendChild(d);
+});
+
+/* ---------------- room selection UI ---------------- */
+document.querySelectorAll('.room-choice').forEach(el=>{
+  el.addEventListener('click', ()=>{
+    document.querySelectorAll('.room-choice').forEach(e=>e.classList.remove('selected'));
+    el.classList.add('selected');
+    currentRoom = el.dataset.room;
+  });
+});
+
+const nickInput = document.getElementById('nick-input');
+const enterBtn = document.getElementById('enter-btn');
+const loginError = document.getElementById('login-error');
+
+function tryEnter(){
+  const val = nickInput.value.trim();
+  if(val.length < 2){ loginError.textContent = 'กรุณาตั้งชื่อเล่นอย่างน้อย 2 ตัวอักษร'; return; }
+  if(val.length > 18){ loginError.textContent = 'ชื่อเล่นยาวเกินไป'; return; }
+  myNick = val;
+  enterChat();
+}
+enterBtn.addEventListener('click', tryEnter);
+nickInput.addEventListener('keydown', e=>{ if(e.key==='Enter') tryEnter(); });
+nickInput.focus();
+
+/* ---------------- enter chat ---------------- */
+function enterChat(){
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('my-nick-tag').textContent = myNick;
+
+  buildRoomList();
+  selectRoom(currentRoom, true);
+
+  announcePresence();
+  presenceTimer = setInterval(announcePresence, 8000);
+
+  pollTimer = setInterval(pollMessages, 1800);
+  window.addEventListener('beforeunload', leaveChat);
+
+  pollDmInbox();
+  setInterval(pollDmInbox, 3000);
+  setupDmUI();
+}
+
+function leaveChat(){
+  try{ window.storage.delete('presence:'+currentRoom+':'+myId, true); }catch(e){}
+}
+
+/* ---------------- room list sidebar ---------------- */
+function buildRoomList(){
+  const list = document.getElementById('room-list');
+  list.innerHTML = '';
+  ROOMS.forEach(r=>{
+    const item = document.createElement('div');
+    item.className = 'room-item' + (r.id===currentRoom ? ' active':'');
+    item.dataset.room = r.id;
+    item.innerHTML = '<span><span class="hash" style="color:var(--phosphor-dim)">#</span>'+escapeHtml(r.label)+'</span>';
+    item.addEventListener('click', ()=>switchRoom(r.id));
+    list.appendChild(item);
+  });
+}
+
+async function switchRoom(roomId){
+  if(roomId === currentRoom) return;
+  try{ await window.storage.delete('presence:'+currentRoom+':'+myId, true); }catch(e){}
+  currentRoom = roomId;
+  document.querySelectorAll('.room-item').forEach(el=>{
+    el.classList.toggle('active', el.dataset.room===roomId);
+  });
+  document.getElementById('current-room-name').textContent = ROOMS.find(r=>r.id===roomId).label;
+  document.getElementById('rooms-sidebar').classList.remove('open');
+  document.getElementById('mobile-overlay').classList.remove('show');
+  selectRoom(roomId, true);
+  announcePresence();
+}
+
+function selectRoom(roomId, fresh){
+  document.getElementById('current-room-name').textContent = ROOMS.find(r=>r.id===roomId).label;
+  if(fresh){
+    document.getElementById('messages').innerHTML = '';
+    knownMsgIds = new Set();
+    addSystemMessage('คุณเข้าสู่ห้อง #'+ROOMS.find(r=>r.id===roomId).label);
+  }
+  loadHistory(roomId);
+}
+
+/* ---------------- storage helpers ---------------- */
+async function safeGet(key, shared){
+  try{
+    const r = await window.storage.get(key, shared);
+    return r ? r.value : null;
+  }catch(e){ return null; }
+}
+async function safeSet(key, value, shared){
+  try{ return await window.storage.set(key, value, shared); }
+  catch(e){ console.error('storage set failed', e); return null; }
+}
+async function safeList(prefix, shared){
+  try{
+    const r = await window.storage.list(prefix, shared);
+    return r ? r.keys : [];
+  }catch(e){ return []; }
+}
+async function safeDelete(key, shared){
+  try{ return await window.storage.delete(key, shared); }catch(e){ return null; }
+}
+
+/* ---------------- sending messages ---------------- */
+async function sendMessage(text){
+  text = text.trim();
+  if(!text) return;
+
+  if(text.startsWith('/')){
+    handleCommand(text);
+    return;
+  }
+
+  const ts = Date.now();
+  const msgId = ts + '_' + Math.random().toString(36).slice(2,8);
+  const payload = JSON.stringify({nick: myNick, uid: myId, text: text, ts: ts, type:'msg'});
+  await safeSet('chat:'+currentRoom+':'+msgId, payload, true);
+  renderMessage(JSON.parse(payload), msgId, true);
+  knownMsgIds.add(msgId);
+}
+
+function handleCommand(raw){
+  const parts = raw.slice(1).split(' ');
+  const cmd = parts[0].toLowerCase();
+  if(cmd === 'help'){
+    addSystemMessage('คำสั่งที่ใช้ได้: /me [ข้อความ] = แสดงสถานะ, /nick [ชื่อใหม่] = เปลี่ยนชื่อ, /clear = ล้างหน้าจอ, /who = ดูคนออนไลน์ — คลิกชื่อใครในรายชื่อด้านขวาเพื่อแชทส่วนตัว');
+  } else if(cmd === 'me'){
+    const action = parts.slice(1).join(' ');
+    if(action){
+      const ts = Date.now();
+      const msgId = ts + '_' + Math.random().toString(36).slice(2,8);
+      const payload = JSON.stringify({nick: myNick, uid: myId, text: action, ts: ts, type:'action'});
+      safeSet('chat:'+currentRoom+':'+msgId, payload, true);
+      renderMessage(JSON.parse(payload), msgId, true);
+      knownMsgIds.add(msgId);
+    }
+  } else if(cmd === 'nick'){
+    const newNick = parts.slice(1).join(' ').trim();
+    if(newNick.length>=2 && newNick.length<=18){
+      const old = myNick;
+      safeDelete('presence:'+currentRoom+':'+myId, true);
+      myNick = newNick;
+      document.getElementById('my-nick-tag').textContent = myNick;
+      addSystemMessage(old+' เปลี่ยนชื่อเป็น '+newNick);
+      announcePresence();
+    } else {
+      addSystemMessage('ชื่อเล่นต้องมี 2-18 ตัวอักษร');
+    }
+  } else if(cmd === 'clear'){
+    document.getElementById('messages').innerHTML = '';
+  } else if(cmd === 'who'){
+    renderUserList();
+  } else {
+    addSystemMessage('ไม่รู้จักคำสั่ง: /'+cmd+' — พิมพ์ /help เพื่อดูคำสั่งทั้งหมด');
+  }
+}
+
+/* ---------------- rendering ---------------- */
+const messagesEl = document.getElementById('messages');
+
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function formatTime(ts){
+  const d = new Date(ts);
+  return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');
+}
+
+function addSystemMessage(text){
+  const line = document.createElement('div');
+  line.className = 'msg-line msg-system';
+  line.innerHTML = '<span class="icon">»</span>'+escapeHtml(text);
+  messagesEl.appendChild(line);
+  scrollToBottom();
+}
+
+function renderMessage(data, msgId, isOwn){
+  const line = document.createElement('div');
+  line.className = 'msg-line' + (isOwn ? ' msg-own':'');
+  const color = colorForNick(data.nick);
+  const time = '<span class="msg-time">['+formatTime(data.ts)+']</span>';
+
+  if(data.type === 'action'){
+    line.innerHTML = time + '<span class="msg-action">* '+escapeHtml(data.nick)+' '+escapeHtml(data.text)+'</span>';
+  } else {
+    line.innerHTML = time +
+      '<span class="msg-nick" style="color:'+color+'">'+escapeHtml(data.nick)+'</span>' +
+      '<span class="msg-text">'+escapeHtml(data.text)+'</span>';
+  }
+  messagesEl.appendChild(line);
+  scrollToBottom();
+}
+
+function scrollToBottom(){
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/* ---------------- load + poll history ---------------- */
+async function loadHistory(roomId){
+  const keys = await safeList('chat:'+roomId+':', true);
+  const items = [];
+  for(const k of keys){
+    const v = await safeGet(k, true);
+    if(v){
+      try{
+        const data = JSON.parse(v);
+        items.push({id:k, data});
+      }catch(e){}
+    }
+  }
+  items.sort((a,b)=> a.data.ts - b.data.ts);
+  const recent = items.slice(-80);
+  for(const item of recent){
+    if(!knownMsgIds.has(item.id)){
+      renderMessage(item.data, item.id, item.data.uid === myId);
+      knownMsgIds.add(item.id);
+    }
+  }
+}
+
+async function pollMessages(){
+  await loadHistory(currentRoom);
+  await renderUserList();
+}
+
+/* ---------------- presence ---------------- */
+async function announcePresence(){
+  await safeSet('presence:'+currentRoom+':'+myId, JSON.stringify({nick: myNick, ts: Date.now(), uid: myId}), true);
+  await renderUserList();
+}
+
+async function renderUserList(){
+  const keys = await safeList('presence:'+currentRoom+':', true);
+  const now = Date.now();
+  const users = [];
+  for(const k of keys){
+    const v = await safeGet(k, true);
+    if(v){
+      try{
+        const data = JSON.parse(v);
+        if(now - data.ts < 25000){
+          users.push(data);
+        } else {
+          // stale, clean up silently
+          safeDelete(k, true);
+        }
+      }catch(e){}
+    }
+  }
+  const seen = new Set();
+  const uniqueUsers = [];
+  for(const u of users){ if(!seen.has(u.nick)){ seen.add(u.nick); uniqueUsers.push(u); } }
+  uniqueUsers.sort((a,b)=> a.nick.localeCompare(b.nick));
+
+  const listEl = document.getElementById('user-list');
+  listEl.innerHTML = '';
+  uniqueUsers.forEach(u=>{
+    const item = document.createElement('div');
+    item.className = 'user-item' + (u.nick===myNick ? ' is-me':'');
+    const badge = (u.uid && dmThreads[u.uid] && dmThreads[u.uid].unread > 0)
+      ? '<span class="dm-badge">'+dmThreads[u.uid].unread+'</span>' : '';
+    item.innerHTML = '<span class="user-dot"></span>'+escapeHtml(u.nick)+(u.nick===myNick?' (คุณ)':'')+badge;
+    if(u.nick !== myNick && u.uid){
+      item.addEventListener('click', ()=> openDmThread(u.uid, u.nick));
+    }
+    listEl.appendChild(item);
+  });
+  document.getElementById('online-count').textContent = uniqueUsers.length + ' คนออนไลน์';
+}
+
+/* ---------------- input bar ---------------- */
+const msgInput = document.getElementById('msg-input');
+const sendBtn = document.getElementById('send-btn');
+sendBtn.addEventListener('click', ()=>{
+  sendMessage(msgInput.value);
+  msgInput.value = '';
+  msgInput.focus();
+});
+msgInput.addEventListener('keydown', e=>{
+  if(e.key==='Enter'){
+    sendMessage(msgInput.value);
+    msgInput.value = '';
+  }
+});
+
+/* ---------------- mobile sidebars ---------------- */
+const roomsSidebar = document.getElementById('rooms-sidebar');
+const usersSidebar = document.getElementById('users-sidebar');
+const overlay = document.getElementById('mobile-overlay');
+document.getElementById('hamburger').addEventListener('click', ()=>{
+  roomsSidebar.classList.toggle('open');
+  overlay.classList.toggle('show');
+});
+overlay.addEventListener('click', ()=>{
+  roomsSidebar.classList.remove('open');
+  usersSidebar.classList.remove('open');
+  overlay.classList.remove('show');
+});
+
+/* ---------------- private messages (DM) ---------------- */
+function dmKey(otherId){
+  return [myId, otherId].sort().join('_');
+}
+
+async function sendDM(otherId, otherNick, text){
+  text = text.trim();
+  if(!text) return;
+  const ts = Date.now();
+  const msgId = ts + '_' + Math.random().toString(36).slice(2,8);
+  const payload = JSON.stringify({fromNick: myNick, fromId: myId, text: text, ts: ts});
+  await safeSet('dmmsg:'+dmKey(otherId)+':'+msgId, payload, true);
+  // notify recipient's inbox
+  await safeSet('dminbox:'+otherId+':'+myId, JSON.stringify({nick: myNick, ts: ts}), true);
+  renderDmMessage(JSON.parse(payload), true);
+  knownDmMsgIds.add(msgId);
+
+  if(!dmThreads[otherId]) dmThreads[otherId] = {nick: otherNick, unread:0, readTs: ts, lastTs: ts};
+  else { dmThreads[otherId].lastTs = ts; dmThreads[otherId].readTs = ts; }
+}
+
+async function loadDmHistory(otherId){
+  const keys = await safeList('dmmsg:'+dmKey(otherId)+':', true);
+  const items = [];
+  for(const k of keys){
+    const v = await safeGet(k, true);
+    if(v){
+      try{ items.push({id:k, data: JSON.parse(v)}); }catch(e){}
+    }
+  }
+  items.sort((a,b)=> a.data.ts - b.data.ts);
+  const recent = items.slice(-100);
+  for(const item of recent){
+    if(!knownDmMsgIds.has(item.id)){
+      renderDmMessage(item.data, item.data.fromId === myId);
+      knownDmMsgIds.add(item.id);
+    }
+  }
+}
+
+function renderDmMessage(data, isOwn){
+  const wrap = document.getElementById('dm-messages');
+  const line = document.createElement('div');
+  line.className = 'msg-line' + (isOwn ? ' msg-own':'');
+  const color = colorForNick(data.fromNick);
+  const time = '<span class="msg-time">['+formatTime(data.ts)+']</span>';
+  line.innerHTML = time +
+    '<span class="msg-nick" style="color:'+color+'">'+escapeHtml(data.fromNick)+'</span>' +
+    '<span class="msg-text">'+escapeHtml(data.text)+'</span>';
+  wrap.appendChild(line);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+async function pollDmInbox(){
+  const keys = await safeList('dminbox:'+myId+':', true);
+  for(const k of keys){
+    const v = await safeGet(k, true);
+    if(!v) continue;
+    let data;
+    try{ data = JSON.parse(v); }catch(e){ continue; }
+    const senderId = k.split(':').pop();
+    if(!dmThreads[senderId]){
+      dmThreads[senderId] = {nick: data.nick, unread: 1, readTs: 0, lastTs: data.ts};
+    } else {
+      dmThreads[senderId].nick = data.nick;
+      if(data.ts > dmThreads[senderId].lastTs) dmThreads[senderId].lastTs = data.ts;
+      if(dmThreads[senderId].readTs < data.ts && senderId !== activeDmPartner){
+        dmThreads[senderId].unread = 1;
+      }
+    }
+  }
+  // if a thread panel is open, keep pulling new messages live
+  if(activeDmPartner){
+    await loadDmHistory(activeDmPartner);
+    if(dmThreads[activeDmPartner]){
+      dmThreads[activeDmPartner].unread = 0;
+      dmThreads[activeDmPartner].readTs = Date.now();
+    }
+  }
+  renderDmFabBadge();
+  renderUserList();
+  if(document.getElementById('dm-list-panel').classList.contains('open')){
+    renderDmThreadsList();
+  }
+}
+
+function renderDmFabBadge(){
+  const totalUnread = Object.values(dmThreads).reduce((s,t)=>s+(t.unread||0),0);
+  const badge = document.getElementById('dm-fab-badge');
+  if(totalUnread > 0){ badge.style.display='flex'; badge.textContent = totalUnread; }
+  else { badge.style.display='none'; }
+}
+
+function renderDmThreadsList(){
+  const listEl = document.getElementById('dm-threads-list');
+  const ids = Object.keys(dmThreads).sort((a,b)=> dmThreads[b].lastTs - dmThreads[a].lastTs);
+  if(ids.length===0){
+    listEl.innerHTML = '<div class="dm-empty">ยังไม่มีข้อความส่วนตัว<br>คลิกชื่อผู้ใช้ในห้องเพื่อเริ่มแชท</div>';
+    return;
+  }
+  listEl.innerHTML = '';
+  ids.forEach(id=>{
+    const t = dmThreads[id];
+    const item = document.createElement('div');
+    item.className = 'dm-thread-item';
+    item.innerHTML = '<span class="nick" style="color:'+colorForNick(t.nick)+'">'+escapeHtml(t.nick)+'</span>' +
+      (t.unread>0 ? '<span class="dm-badge">'+t.unread+'</span>' : '');
+    item.addEventListener('click', ()=> openDmThread(id, t.nick));
+    listEl.appendChild(item);
+  });
+}
+
+function openDmThread(otherId, otherNick){
+  activeDmPartner = otherId;
+  knownDmMsgIds = new Set();
+  if(!dmThreads[otherId]) dmThreads[otherId] = {nick: otherNick, unread:0, readTs: Date.now(), lastTs:0};
+  dmThreads[otherId].unread = 0;
+  dmThreads[otherId].readTs = Date.now();
+  dmThreads[otherId].nick = otherNick;
+
+  document.getElementById('dm-thread-title').textContent = 'คุยกับ ' + otherNick;
+  document.getElementById('dm-messages').innerHTML = '';
+  document.getElementById('dm-list-panel').classList.remove('open');
+  document.getElementById('dm-thread-panel').classList.add('open');
+  loadDmHistory(otherId);
+  renderDmFabBadge();
+  document.getElementById('dm-input').focus();
+}
+
+function setupDmUI(){
+  const fab = document.getElementById('dm-fab');
+  const listPanel = document.getElementById('dm-list-panel');
+  const threadPanel = document.getElementById('dm-thread-panel');
+  const dmInput = document.getElementById('dm-input');
+  const dmSendBtn = document.getElementById('dm-send-btn');
+
+  fab.addEventListener('click', ()=>{
+    threadPanel.classList.remove('open');
+    activeDmPartner = null;
+    listPanel.classList.toggle('open');
+    if(listPanel.classList.contains('open')) renderDmThreadsList();
+  });
+  document.getElementById('dm-list-close').addEventListener('click', ()=>{
+    listPanel.classList.remove('open');
+  });
+  document.getElementById('dm-thread-close').addEventListener('click', ()=>{
+    threadPanel.classList.remove('open');
+    activeDmPartner = null;
+  });
+  document.getElementById('dm-back-btn').addEventListener('click', ()=>{
+    threadPanel.classList.remove('open');
+    activeDmPartner = null;
+    listPanel.classList.add('open');
+    renderDmThreadsList();
+  });
+
+  function doSendDm(){
+    if(!activeDmPartner) return;
+    const text = dmInput.value;
+    if(!text.trim()) return;
+    sendDM(activeDmPartner, dmThreads[activeDmPartner].nick, text);
+    dmInput.value = '';
+  }
+  dmSendBtn.addEventListener('click', doSendDm);
+  dmInput.addEventListener('keydown', e=>{ if(e.key==='Enter') doSendDm(); });
+}
+
+})();
+</script>
+</body>
+</html>
